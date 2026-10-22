@@ -1,0 +1,129 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 //@version=6\
+strategy("IBIT BTC Volatility Harvesting Engine [Alert-Only]", overlay=true, pyramiding=1000, close_entries_rule="FIFO", calc_on_order_fills=false, calc_on_every_tick=false, process_orders_on_close=true, initial_capital=1000000, default_qty_type=strategy.cash, currency=currency.USD)\
+\
+// 1. INPUTS\
+grp_strat   = "Strategy Thresholds"\
+t1_drop_pct = input.float(-2.50, "Tier 1 Drop Threshold (%)", step=0.1, group=grp_strat)\
+t2_drop_pct = input.float(-4.50, "Tier 2 Drop Threshold (%)", step=0.1, group=grp_strat)\
+exit_pct    = input.float(2.10,  "Target Exit Gain (%)",      step=0.1, group=grp_strat)\
+\
+grp_cap     = "Capital & Execution"\
+t1_cap_usd  = input.float(25000.0, "Tier 1 Clip Size ($)", step=1000.0, group=grp_cap)\
+t2_cap_usd  = input.float(50000.0, "Tier 2 Clip Size ($)", step=1000.0, group=grp_cap)\
+exec_ticker = input.string("IBIT", "Execution Vehicle Ticker", group=grp_cap)\
+\
+// 2. STATE ARRAYS\
+var string[] open_ids     = array.new_string(0)\
+var int[]    open_tiers   = array.new_int(0)\
+var float[]  open_caps    = array.new_float(0)\
+var float[]  open_entries = array.new_float(0)\
+var float[]  open_targets = array.new_float(0)\
+\
+var int      tranche_seq        = 0\
+var float    cum_realized_yield = 0.0\
+var string   last_action_str    = "NONE"\
+var string   last_action_date   = "-"\
+\
+// 3. CALCULATIONS\
+daily_ret_pct = ((close - close[1]) / close[1]) * 100.0\
+is_tier_1 = daily_ret_pct <= t1_drop_pct and daily_ret_pct > t2_drop_pct\
+is_tier_2 = daily_ret_pct <= t2_drop_pct\
+date_str = str.format("\{0,date,yyyy-MM-dd\}", time)\
+\
+// 4. FIFO EXITS\
+int i = 0\
+while i < array.size(open_ids)\
+    t_id     = array.get(open_ids, i)\
+    t_tier   = array.get(open_tiers, i)\
+    t_cap    = array.get(open_caps, i)\
+    t_entry  = array.get(open_entries, i)\
+    t_target = array.get(open_targets, i)\
+    \
+    if close >= t_target\
+        realized_gain = t_cap * ((close - t_entry) / t_entry)\
+        cum_realized_yield += realized_gain\
+        \
+        // FIXED: Single-line JSON to prevent line-continuation syntax errors\
+        sell_json = '\{"timestamp":"' + str.tostring(time) + '","ticker":"' + exec_ticker + '","action":"SELL","tranche_id":"' + t_id + '","tier":' + str.tostring(t_tier) + ',"capital_usd":' + str.tostring(t_cap) + ',"btc_close":' + str.tostring(close) + ',"target_exit_price":' + str.tostring(math.round(t_target, 2)) + '\}'\
+        \
+        strategy.close(id=t_id, comment="EXIT_" + t_id, alert_message=sell_json)\
+        \
+        last_action_str  := "SELL " + t_id + " (+" + str.tostring(math.round(realized_gain, 2)) + "$)"\
+        last_action_date := date_str\
+        \
+        array.remove(open_ids, i)\
+        array.remove(open_tiers, i)\
+        array.remove(open_caps, i)\
+        array.remove(open_entries, i)\
+        array.remove(open_targets, i)\
+    else\
+        i += 1\
+\
+// 5. ENTRIES\
+if is_tier_1 or is_tier_2\
+    tranche_seq += 1\
+    active_tier = is_tier_2 ? 2 : 1\
+    active_cap  = is_tier_2 ? t2_cap_usd : t1_cap_usd\
+    seq_padded  = str.format("\{0,number,000\}", tranche_seq)\
+    tranche_id  = "T" + str.tostring(active_tier) + "_" + seq_padded\
+    \
+    order_qty   = active_cap / close\
+    target_px   = close * (1.0 + (exit_pct / 100.0))\
+    \
+    // FIXED: Single-line JSON\
+    buy_json = '\{"timestamp":"' + str.tostring(time) + '","ticker":"' + exec_ticker + '","action":"BUY","tranche_id":"' + tranche_id + '","tier":' + str.tostring(active_tier) + ',"capital_usd":' + str.tostring(active_cap) + ',"btc_close":' + str.tostring(close) + ',"target_exit_price":' + str.tostring(math.round(target_px, 2)) + '\}'\
+    \
+    strategy.entry(id=tranche_id, direction=strategy.long, qty=order_qty, comment=tranche_id, alert_message=buy_json)\
+    \
+    array.push(open_ids, tranche_id)\
+    array.push(open_tiers, active_tier)\
+    array.push(open_caps, active_cap)\
+    array.push(open_entries, close)\
+    array.push(open_targets, target_px)\
+    \
+    last_action_str  := "BUY " + tranche_id + " ($" + str.tostring(active_cap / 1000) + "k)"\
+    last_action_date := date_str\
+\
+// 6. DASHBOARD\
+int   open_count       = array.size(open_ids)\
+float deployed_cap     = 0.0\
+float total_btc_units  = 0.0\
+float current_val_usd  = 0.0\
+\
+for j = 0 to (open_count > 0 ? open_count - 1 : 0)\
+    if open_count > 0\
+        c_cap   = array.get(open_caps, j)\
+        c_entry = array.get(open_entries, j)\
+        units   = c_cap / c_entry\
+        deployed_cap    += c_cap\
+        total_btc_units += units\
+        current_val_usd += (units * close)\
+\
+float avg_cost_basis  = total_btc_units > 0 ? (deployed_cap / total_btc_units) : 0.0\
+float unrealized_usd  = open_count > 0 ? (current_val_usd - deployed_cap) : 0.0\
+float unrealized_pct  = deployed_cap > 0 ? ((unrealized_usd / deployed_cap) * 100.0) : 0.0\
+\
+var table dash = table.new(position.top_right, 2, 7, bgcolor=color.new(color.black, 15), border_width=1, border_color=color.new(color.gray, 60))\
+\
+if barstate.islast\
+    table.cell(dash, 0, 0, "IBIT VOLATILITY ENGINE", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.small)\
+    table.cell(dash, 1, 0, "STATUS", text_color=color.white, bgcolor=color.new(color.blue, 30), text_size=size.small)\
+    table.cell(dash, 0, 1, "Active Tranches", text_color=color.silver, text_size=size.small, text_halign=text.align_left)\
+    table.cell(dash, 1, 1, str.tostring(open_count), text_color=color.white, text_size=size.small, text_halign=text.align_right)\
+    table.cell(dash, 0, 2, "Capital Deployed", text_color=color.silver, text_size=size.small, text_halign=text.align_left)\
+    table.cell(dash, 1, 2, "$" + str.tostring(deployed_cap, "#,###"), text_color=color.white, text_size=size.small, text_halign=text.align_right)\
+    table.cell(dash, 0, 3, "Avg Basis", text_color=color.silver, text_size=size.small, text_halign=text.align_left)\
+    table.cell(dash, 1, 3, "$" + str.tostring(avg_cost_basis, "#,###.00"), text_color=color.white, text_size=size.small, text_halign=text.align_right)\
+    table.cell(dash, 0, 4, "Unrealized PnL", text_color=color.silver, text_size=size.small, text_halign=text.align_left)\
+    table.cell(dash, 1, 4, "$" + str.tostring(unrealized_usd, "#,###.00"), text_color=unrealized_usd >= 0 ? color.lime : color.red, text_size=size.small, text_halign=text.align_right)\
+    table.cell(dash, 0, 5, "Realized Yield", text_color=color.silver, text_size=size.small, text_halign=text.align_left)\
+    table.cell(dash, 1, 5, "+$" + str.tostring(cum_realized_yield, "#,###.00"), text_color=color.aqua, text_size=size.small, text_halign=text.align_right)\
+\
+plot(avg_cost_basis > 0 ? avg_cost_basis : na, "Average Open Cost Basis", color=color.new(color.orange, 0), style=plot.style_linebr, linewidth=2)}

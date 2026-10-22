@@ -1,0 +1,42 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2822
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx720\tx1440\tx2160\tx2880\tx3600\tx4320\tx5040\tx5760\tx6480\tx7200\tx7920\tx8640\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 # IBIT Bitcoin Volatility Harvesting & Cash Yield Engine\
+\
+Production alert-only quantitative system harvesting daily Spot `BTC/USD` volatility via **IBIT** using fixed non-compounding tranches ($25k / $50k) and independent lot accounting (ANY rule).\
+\
+## 1. Strategy Rules Summary\
+\
+| Rule | Condition | Action |\
+| :--- | :--- | :--- |\
+| **Timeframe** | `BTCUSD` Daily (`1D`) close at `00:00 UTC` | Evaluates strictly once per daily bar close |\
+| **Tier 1 Entry** | `-2.50% >= Daily Return > -4.50%` | Buy **$25,000** of `IBIT` |\
+| **Tier 2 Entry** | `Daily Return <= -4.50%` | Buy **$50,000** of `IBIT` |\
+| **Target Exit** | `Daily Close >= Tranche Entry * 1.021` (`+2.10%`) | Sell specific matched tranche independently; keep profit in cash |\
+\
+## 2. TradingView Setup (`tradingview_engine.pine`)\
+1. Open **TradingView** -> **`BTCUSD`** -> **`1D`** timeframe.\
+2. Open **Pine Editor** -> Paste `tradingview_engine.pine` -> **Save** -> **Add to chart**.\
+3. Verify executions in the **Strategy Tester** -> **List of Trades**.\
+\
+## 3. Google Sheets Webhook Deployment\
+1. Open Google Sheet `1_R3lsppGz27bBpzEbRsm1JqB6MFYNniyIw4qKSg5hFk` -> **Extensions** -> **Apps Script**.\
+2. Paste `google_sheets_webhook.js` -> **Save**.\
+3. Run `setupSheets` from the top toolbar and grant permissions.\
+4. Click **Deploy** -> **New deployment** -> **Web app** (Execute as: Me, Access: Anyone) -> Copy URL.\
+\
+## 4. TradingView Alert Setup\
+1. Press `Alt + A` on chart.\
+2. **Condition:** `IBIT BTC Volatility Harvesting Engine`, **Trigger:** `Order fills only`.\
+3. **Message:** `\{\{strategy.order.alert_message\}\}`\
+4. **Notifications:** Check **Webhook URL** -> Paste Apps Script URL -> **Create**.\
+\
+## 5. Manual IBKR Mobile Execution\
+*Alerts trigger at 07:00 AM Phuket time (00:00 UTC).*\
+\
+*   **BUY Alert (e.g., `BUY T1_005` for $25k):** Open IBKR -> `IBIT` -> Buy $25,000 USD (Limit Outside RTH or Market-on-Open). \
+*   **SELL Alert (e.g., `SELL T1_005`):** Open IBKR -> `IBIT` -> Sell the exact historical share count for `T1_005`.}
