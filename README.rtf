@@ -16,7 +16,7 @@ Production alert-only quantitative system harvesting daily Spot `BTC/USD` volati
 | **Timeframe** | `BTCUSD` Daily (`1D`) close at `00:00 UTC` | Evaluates strictly once per daily bar close |\
 | **Tier 1 Entry** | `-2.50% >= Daily Return > -4.50%` | Buy **$25,000** of `IBIT` |\
 | **Tier 2 Entry** | `Daily Return <= -4.50%` | Buy **$50,000** of `IBIT` |\
-| **Target Exit** | `Daily Close >= Tranche Entry * 1.021` (`+2.10%`) | Sell specific matched tranche independently; keep profit in cash |\
+| **Momentum Exit** | `Daily BTC Return >= +2.10%` AND `Current Price > Tranche Entry Price` | Sell ALL profitable tranches simultaneously; keep profit in cash |\
 \
 ## 2. TradingView Setup (`tradingview_engine.pine`)\
 1. Open **TradingView** -> **`BTCUSD`** -> **`1D`** timeframe.\
@@ -35,8 +35,9 @@ Production alert-only quantitative system harvesting daily Spot `BTC/USD` volati
 3. **Message:** `\{\{strategy.order.alert_message\}\}`\
 4. **Notifications:** Check **Webhook URL** -> Paste Apps Script URL -> **Create**.\
 \
-## 5. Manual IBKR Mobile Execution\
-*Alerts trigger at 07:00 AM Phuket time (00:00 UTC).*\
+## 5. Manual IBKR Execution Protocol\
+*Alerts trigger at 07:00 AM Indochina Time (00:00 UTC).*\
 \
 *   **BUY Alert (e.g., `BUY T1_005` for $25k):** Open IBKR -> `IBIT` -> Buy $25,000 USD (Limit Outside RTH or Market-on-Open). \
-*   **SELL Alert (e.g., `SELL T1_005`):** Open IBKR -> `IBIT` -> Sell the exact historical share count for `T1_005`.}
+*   **SELL Alert (e.g., `SELL T1_005`):** Open IBKR -> `IBIT` -> Sell the exact historical share count for `T1_005`. \
+*   **Batch Selling:** If BTC surges >= +2.1% in a single day, you may receive multiple `SELL` alerts at the exact same time (e.g., `SELL T1_005`, `SELL T1_006`). Execute all of them to harvest the aggregate yield.}
